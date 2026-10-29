@@ -19,7 +19,7 @@ from highlights.analysis.scoring import score_moments
 from highlights.analysis.selection import select_sequences
 from highlights.config import Config, load_config
 from highlights.demo.parser import DemoData, ensure_dem_file, parse_demo
-from highlights.demo.players import PlayerNotFound, resolve_player
+from highlights.demo.players import PlayerNotFound, resolve_players
 from highlights.models import CameraAction, Sequence
 from highlights.report import print_sequences_table, write_report
 from highlights.util.log import console, error, info, warn
@@ -51,24 +51,31 @@ def _resolve_work_dir(config: Config, demo_path: Path) -> Path:
     return app_data_dir() / "work" / demo_path.stem
 
 
-def _analyze(demo: DemoData, config: Config, player: str | None) -> list[Sequence]:
+def _analyze(demo: DemoData, config: Config, queries: list[str]) -> list[Sequence]:
     moments = cluster_moments(demo.kills, demo.tickrate, config.selection.kill_gap_seconds)
     clutches = detect_clutches(demo)
     moments = attach_clutches(moments, clutches, demo)
     score_moments(moments, demo)
 
-    player_steamid = None
-    if player:
-        player_steamid = resolve_player(demo, player)
-        info(f"Filtering highlights to player: {demo.player_names[player_steamid]} ({player_steamid})")
+    player_steamids: list[str] | None = None
+    if queries:
+        player_steamids = resolve_players(demo, queries)
+        names = ", ".join(f"{demo.player_names[sid]} ({sid})" for sid in player_steamids)
+        info(f"Filtering highlights to players: {names}")
 
-    return select_sequences(moments, demo, config.selection, config.recording, player_steamid)
+    return select_sequences(moments, demo, config.selection, config.recording, player_steamids)
 
 
 @main.command()
 @click.argument("demo", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.option("-o", "--output", type=click.Path(path_type=Path), default=None, help="Output MP4 path")
 @click.option("--player", default=None, help="Only this player's highlights (steamid64 or name)")
+@click.option(
+    "--players",
+    "players",
+    multiple=True,
+    help="Only these players' highlights: comma-separated and/or repeated (steamid64 or name)",
+)
 @click.option("--top", type=int, default=None, help="Max number of highlights")
 @click.option("--max-duration", type=float, default=None, help="Max total video length, seconds")
 @click.option("--min-kills", type=int, default=None, help="Min kills for a moment to qualify")
@@ -89,6 +96,7 @@ def run(
     demo: Path,
     output: Path | None,
     player: str | None,
+    players: tuple[str, ...],
     top: int | None,
     max_duration: float | None,
     min_kills: int | None,
@@ -128,7 +136,8 @@ def run(
     )
 
     try:
-        sequences = _analyze(parsed, config, player)
+        queries = [*([player] if player else []), *players]
+        sequences = _analyze(parsed, config, queries)
     except PlayerNotFound as exc:
         raise click.ClickException(str(exc))
 

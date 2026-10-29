@@ -31,7 +31,7 @@ def test_player_filter_relaxes_min_kills():
     kills = [make_kill(2000, attacker="111")]
     demo, moments = _prepare(kills, rounds)
     sequences = select_sequences(
-        moments, demo, SelectionConfig(), RecordingConfig(), player_steamid="111"
+        moments, demo, SelectionConfig(), RecordingConfig(), player_steamids=["111"]
     )
     assert len(sequences) == 1
 
@@ -90,3 +90,50 @@ def test_sequences_numbered_chronologically():
     sequences = select_sequences(moments, demo, SelectionConfig(), RecordingConfig())
     assert [s.number for s in sequences] == [1, 2]
     assert sequences[0].start_tick < sequences[1].start_tick
+
+
+def test_players_filter_includes_only_listed():
+    rounds = [make_round(i, i * 100000, (i + 1) * 100000) for i in range(3)]
+    kills = [
+        make_kill(5000, round_index=0, attacker="111"),
+        make_kill(105000, round_index=1, attacker="222"),
+        make_kill(205000, round_index=2, attacker="333"),
+    ]
+    demo, moments = _prepare(kills, rounds)
+    sequences = select_sequences(
+        moments, demo, SelectionConfig(), RecordingConfig(), player_steamids=["111", "333"]
+    )
+    steamids = {m.steamid for s in sequences for m in s.moments}
+    assert steamids == {"111", "333"}
+
+
+def test_players_filter_empty_means_no_filter():
+    rounds = [make_round(0, 0, 100000)]
+    kills = [make_kill(2000, attacker="111")]
+    demo, moments = _prepare(kills, rounds)
+    sequences = select_sequences(
+        moments, demo, SelectionConfig(), RecordingConfig(), player_steamids=[]
+    )
+    assert len(sequences) == 0
+
+    kills = [make_kill(2000, attacker="111"), make_kill(2100, attacker="111", victim="333")]
+    demo, moments = _prepare(kills, rounds)
+    sequences = select_sequences(
+        moments, demo, SelectionConfig(), RecordingConfig(), player_steamids=[]
+    )
+    assert len(sequences) == 1
+    assert sequences[0].moments[0].steamid == "111"
+
+
+def test_players_filter_unlisted_excluded_even_if_best():
+    rounds = [make_round(0, 0, 100000), make_round(1, 100000, 200000)]
+    kills = [
+        make_kill(5000 + i * 100, round_index=0, attacker="444", victim=str(i)) for i in range(5)
+    ]
+    kills += [make_kill(105000, round_index=1, attacker="111")]
+    demo, moments = _prepare(kills, rounds)
+    sequences = select_sequences(
+        moments, demo, SelectionConfig(), RecordingConfig(), player_steamids=["111"]
+    )
+    assert len(sequences) == 1
+    assert {m.steamid for m in sequences[0].moments} == {"111"}

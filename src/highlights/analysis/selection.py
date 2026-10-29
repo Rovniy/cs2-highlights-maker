@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Collection
+
 from highlights.config import RecordingConfig, SelectionConfig
 from highlights.demo.parser import DemoData
 from highlights.models import CameraAction, Moment, Sequence
@@ -12,12 +14,12 @@ MIN_SAFE_TICK = 96  # the game may skip the first ~1.5s of ticks after demo_goto
 def eligible_moments(
     moments: list[Moment],
     selection: SelectionConfig,
-    player_steamid: str | None = None,
+    player_steamids: Collection[str] | None = None,
 ) -> list[Moment]:
-    min_kills = 1 if player_steamid else selection.min_kills
+    min_kills = 1 if player_steamids else selection.min_kills
     result = []
     for moment in moments:
-        if player_steamid and moment.steamid != player_steamid:
+        if player_steamids and moment.steamid not in player_steamids:
             continue
         has_clutch = moment.clutch is not None and (moment.clutch.won or moment.clutch.kills >= 2)
         has_special = any(k.is_special for k in moment.kills)
@@ -46,9 +48,9 @@ def select_sequences(
     demo: DemoData,
     selection: SelectionConfig,
     recording: RecordingConfig,
-    player_steamid: str | None = None,
+    player_steamids: Collection[str] | None = None,
 ) -> list[Sequence]:
-    candidates = eligible_moments(moments, selection, player_steamid)
+    candidates = eligible_moments(moments, selection, player_steamids)
     candidates.sort(key=lambda m: m.score, reverse=True)
 
     picked: list[Moment] = []

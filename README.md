@@ -7,6 +7,7 @@ in-game footage.
 ```
 highlights match.dem                      # best moments of the whole match
 highlights match.dem --player s1mple      # one player's highlights only
+highlights match.dem --players s1mple,device   # several players (comma-separated or repeated)
 highlights match.dem --json-only          # analysis only, no recording
 highlights doctor                         # environment check
 highlights update-tools                   # re-download latest HLAE/FFmpeg
