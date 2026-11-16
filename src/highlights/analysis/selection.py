@@ -136,10 +136,11 @@ def select_sequences(
     selection: SelectionConfig,
     recording: RecordingConfig,
     player_steamids: Collection[str] | None = None,
+    merge: bool = True,
 ) -> list[Sequence]:
     candidates = eligible_moments(moments, selection, player_steamids)
     picked = [moment for _, moment in pick_rows([(demo, m) for m in candidates], selection, recording)[0]]
-    return build_sequences(picked, demo, selection, recording)
+    return build_sequences(picked, demo, selection, recording, merge=merge)
 
 
 def build_sequences(

@@ -225,3 +225,29 @@ def test_top_weapon_filter_without_match_lists_weapons(runner_and_demos):
     result = _top(runner, files, "--weapon", "deagle")
     assert result.exit_code != 0
     assert "weapons in these demos: ak47" in result.output
+
+
+def test_run_per_kill_keeps_each_kill_its_own_sequence(tmp_path, monkeypatch):
+    # Two deagle kills one second apart would merge into one clip; --per-kill keeps them apart.
+    rounds = [make_round(0, 0, 100000, winner="CT")]
+    kills = [
+        make_kill(2000, attacker="alice", victim="v1", weapon="deagle"),
+        make_kill(2064, attacker="alice", victim="v2", weapon="deagle"),
+        make_kill(9000, attacker="alice", victim="v3", weapon="ak47"),
+    ]
+    demo = _demo_for("m.dem", kills, rounds, "de_test")
+    monkeypatch.setattr(cli, "parse_demo", lambda path: demo)
+    monkeypatch.setattr(cli, "ensure_dem_file", lambda path, work_dir: path)
+    monkeypatch.setattr(cli, "load_config", lambda: Config())
+    monkeypatch.setattr(cli, "_resolve_work_dir", lambda config, demo_path: tmp_path)
+    dem_file = tmp_path / "m.dem"
+    dem_file.write_bytes(b"")
+    out = tmp_path / "out.mp4"
+    result = click.testing.CliRunner().invoke(
+        cli.main, [str(dem_file), "--json-only", "-o", str(out), "--weapon", "deag", "--per-kill"]
+    )
+    assert result.exit_code == 0, result.output
+    import json
+
+    sequences = json.loads(out.with_suffix(".json").read_text())["sequences"]
+    assert [(s["end_tick"] - s["start_tick"]) / 64 for s in sequences] == [3.5, 3.5]

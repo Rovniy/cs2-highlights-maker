@@ -26,11 +26,12 @@ parses every demo, `eligible_moments` for the players, keep when a moment scores
 
 `run` also takes `--round` (filter in `cli._analyze`, before `select_sequences`).
 
-`top` and `batch` take `--weapon NAME,.. --headshot-only --per-kill --lead-in S --lead-out S` (`cli._kill_filter_options`,
+`run`, `top` and `batch` take `--weapon NAME,.. --headshot-only --per-kill --lead-in S --lead-out S` (`cli._kill_filter_options`,
 `analysis/killfilter.py`): `apply_kill_filter` rebuilds the scored moments from their matching kills (demo weapon names,
 `ALIASES` for short names, `knife` = every knife) and rescores them; `--per-kill` makes one single-kill moment per kill
 (no clutch) with `PER_KILL_LEAD_IN`/`OUT` 2 s / 1.5 s. Any filter makes single kills qualify unless `--min-kills` is
-given. Batch JSON gets `batch.kill_filter`. Not on `run`.
+given. Batch JSON gets `batch.kill_filter`. On `run` (`cli._analyze`), `--per-kill` turns off the overlap merge
+(`select_sequences(merge=False)`), so each kill is its own segment of the video even when clips overlap.
 
 CLI: click with a custom `DefaultRunGroup` — `highlights match.dem` resolves to
 the `run` subcommand. Entry point `highlights.cli:main`.

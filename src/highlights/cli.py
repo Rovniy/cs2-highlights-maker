@@ -68,8 +68,14 @@ def _scored_moments(demo: DemoData, config: Config) -> list[Moment]:
     return moments
 
 
-def _analyze(demo: DemoData, config: Config, queries: list[str], round_rules: list | None = None) -> list[Sequence]:
+def _analyze(
+    demo: DemoData, config: Config, queries: list[str], round_rules: list | None = None, kill_filter=None
+) -> list[Sequence]:
     moments = _scored_moments(demo, config)
+    if kill_filter is not None:
+        from highlights.analysis.killfilter import apply_kill_filter
+
+        moments = apply_kill_filter(moments, demo, kill_filter)
     if round_rules:
         from highlights.analysis.selection import round_allowed
 
@@ -82,7 +88,9 @@ def _analyze(demo: DemoData, config: Config, queries: list[str], round_rules: li
         names = ", ".join(f"{demo.player_names[sid]} ({sid})" for sid in player_steamids)
         info(f"Filtering highlights to players: {names}")
 
-    return select_sequences(moments, demo, config.selection, config.recording, player_steamids)
+    # --per-kill: every kill stays its own segment of the video, even when the clips overlap.
+    merge = kill_filter is None or not kill_filter.per_kill
+    return select_sequences(moments, demo, config.selection, config.recording, player_steamids, merge=merge)
 
 
 def _load_cinematic_inputs(config: Config, map_name: str) -> tuple[list, PlaceMap | None, dict[str, str]]:
@@ -134,7 +142,7 @@ def _parse_player_names(values: tuple[str, ...]) -> dict[str, str]:
 
 
 def _kill_filter_options(command):
-    """--weapon/--headshot-only/--per-kill/--lead-in/--lead-out, shared by `top` and `batch`."""
+    """--weapon/--headshot-only/--per-kill/--lead-in/--lead-out, shared by `run`, `top` and `batch`."""
     for option in reversed(
         [
             click.option(
@@ -363,6 +371,7 @@ def _no_kill_match(kill_filter, demos: list[DemoData]) -> str:
     default=0.0,
     help="Seconds added to kill times in the report (calibrated capture-start offset)",
 )
+@_kill_filter_options
 def run(
     demo: Path,
     output: Path | None,
@@ -400,6 +409,11 @@ def run(
     vertical: str | None,
     vertical_killfeed: bool,
     timing_offset: float,
+    weapons: tuple[str, ...],
+    headshot_only: bool,
+    per_kill: bool,
+    lead_in: float | None,
+    lead_out: float | None,
 ) -> None:
     """Parse DEMO, detect highlights, record them in-game and produce an MP4."""
     from highlights.analysis.selection import parse_rounds
@@ -440,6 +454,7 @@ def run(
 
     config.recording.player_names.update(_parse_player_names(player_names))
     config.recording.extra_commands = [*config.recording.extra_commands, *extra_commands]
+    kill_filter = _setup_kill_filter(config, weapons, headshot_only, per_kill, min_kills, lead_in, lead_out)
 
     output = output or demo.with_name(demo.stem + "-highlights.mp4")
     work_dir = _resolve_work_dir(config, demo)
@@ -458,13 +473,14 @@ def run(
 
     try:
         queries = [*([player] if player else []), *players]
-        sequences = _analyze(parsed, config, queries, round_rules)
+        sequences = _analyze(parsed, config, queries, round_rules, kill_filter)
     except PlayerNotFound as exc:
         raise click.ClickException(str(exc))
 
     if not sequences:
         raise click.ClickException(
             "No highlights matched the criteria — try --min-kills 1 or check the demo"
+            + _no_kill_match(kill_filter, [parsed])
         )
 
     from highlights.spatial import build_spatial_metadata
