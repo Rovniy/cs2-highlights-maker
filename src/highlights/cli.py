@@ -133,6 +133,71 @@ def _parse_player_names(values: tuple[str, ...]) -> dict[str, str]:
     return result
 
 
+def _kill_filter_options(command):
+    """--weapon/--headshot-only/--per-kill/--lead-in/--lead-out, shared by `top` and `batch`."""
+    for option in reversed(
+        [
+            click.option(
+                "--weapon",
+                "weapons",
+                multiple=True,
+                metavar="NAME",
+                help="Only kills with these weapons (deagle, awp, ak47, m4, usp, scout, ...): comma-separated "
+                "and/or repeated. A moment keeps only its matching kills",
+            ),
+            click.option("--headshot-only", is_flag=True, help="Only headshot kills"),
+            click.option(
+                "--per-kill",
+                is_flag=True,
+                help="One clip per (matching) kill instead of per moment, with a short lead-in/out "
+                "(2 s / 1.5 s unless --lead-in/--lead-out): cut material for a music edit",
+            ),
+            click.option("--lead-in", type=float, default=None, help="Seconds before a clip's first kill"),
+            click.option("--lead-out", type=float, default=None, help="Seconds after a clip's last kill"),
+        ]
+    ):
+        command = option(command)
+    return command
+
+
+def _setup_kill_filter(
+    config: Config,
+    weapons: tuple[str, ...],
+    headshot_only: bool,
+    per_kill: bool,
+    min_kills: int | None,
+    lead_in: float | None,
+    lead_out: float | None,
+):
+    """The KillFilter for these flags; adjusts the config: single kills qualify unless --min-kills is
+    given, and --per-kill shortens the lead-in/out unless --lead-in/--lead-out are given."""
+    from highlights.analysis.killfilter import PER_KILL_LEAD_IN, PER_KILL_LEAD_OUT, KillFilter, parse_weapons
+
+    kill_filter = KillFilter(parse_weapons(weapons), headshot_only, per_kill)
+    if kill_filter.active and min_kills is None:
+        config.selection.min_kills = 1
+    if per_kill:
+        config.recording.lead_in_seconds = PER_KILL_LEAD_IN
+        config.recording.lead_out_seconds = PER_KILL_LEAD_OUT
+    for name, value in (("lead_in_seconds", lead_in), ("lead_out_seconds", lead_out)):
+        if value is not None:
+            if value < 0:
+                raise click.UsageError("--lead-in/--lead-out must be 0 or more")
+            setattr(config.recording, name, value)
+    if kill_filter.active:
+        info(f"Kill filter: {kill_filter.describe()}")
+    return kill_filter
+
+
+def _no_kill_match(kill_filter, demos: list[DemoData]) -> str:
+    """Hint for an empty result under a weapon filter: the weapon names these demos actually use."""
+    from highlights.analysis.killfilter import weapons_seen
+
+    if not kill_filter.weapons:
+        return ""
+    return f" (weapons in these demos: {', '.join(weapons_seen(demos)[:15])})"
+
+
 @main.command()
 @click.argument("demo", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.option("-o", "--output", type=click.Path(path_type=Path), default=None, help="Output MP4 path")
@@ -754,6 +819,7 @@ def _match_cells(rows: list[tuple[DemoData, Moment]], config: Config) -> list[st
     is_flag=True,
     help="Replace the saved place map of every map in these demos with one built from them (e.g. after a map update)",
 )
+@_kill_filter_options
 def top(
     demos: tuple[Path, ...],
     recursive: bool,
@@ -768,6 +834,11 @@ def top(
     rounds: tuple[str, ...],
     picks: tuple[str, ...],
     excludes: tuple[str, ...],
+    weapons: tuple[str, ...],
+    headshot_only: bool,
+    per_kill: bool,
+    lead_in: float | None,
+    lead_out: float | None,
 ) -> None:
     """Rank highlights across several DEMOs (files or folders) and print one table (no recording)."""
     from highlights.analysis.selection import apply_picks, parse_numbers, parse_rounds, round_allowed
@@ -790,10 +861,12 @@ def top(
     ):
         if value is not None:
             setattr(section, name, value)
+    kill_filter = _setup_kill_filter(config, weapons, headshot_only, per_kill, min_kills, lead_in, lead_out)
 
     queries = [*([player] if player else []), *players]
 
     rows: list[tuple[DemoData, Moment]] = []
+    parsed_demos: list[DemoData] = []
     new_places: dict[str, PlaceMap] = {}
     failed = 0
     for demo_path in demos:
@@ -812,8 +885,11 @@ def top(
         )
         if build_places or rebuild_places:
             _add_missing_places(new_places, parsed_path, parsed, rebuild=rebuild_places)
+        parsed_demos.append(parsed)
 
-        moments = _scored_moments(parsed, config)
+        from highlights.analysis.killfilter import apply_kill_filter
+
+        moments = apply_kill_filter(_scored_moments(parsed, config), parsed, kill_filter)
 
         player_steamids: list[str] | None = None
         if queries:
@@ -852,6 +928,7 @@ def top(
             )
         raise click.ClickException(
             "No highlights matched the criteria — try --min-kills 1 or check the demos"
+            + _no_kill_match(kill_filter, parsed_demos)
         )
 
     slowmo_cells = None
@@ -1143,6 +1220,7 @@ def scan(
 @click.option("--no-review", is_flag=True, help="Skip the clipping check and contact sheets after recording")
 @click.option("--no-kill-sync", is_flag=True, help="Keep nominal kill times (skip measuring them from the kill feed)")
 @click.option("--timing-offset", type=float, default=0.0, help="Seconds added to kill times in the reports")
+@_kill_filter_options
 def batch(
     demos: tuple[str, ...],
     players: tuple[str, ...],
@@ -1186,6 +1264,11 @@ def batch(
     buildup_length: float,
     no_review: bool,
     no_kill_sync: bool,
+    weapons: tuple[str, ...],
+    headshot_only: bool,
+    per_kill: bool,
+    lead_in: float | None,
+    lead_out: float | None,
 ) -> None:
     """One clip + JSON per highlight across DEMOs, for a separate compilation step.
 
@@ -1240,6 +1323,7 @@ def batch(
             setattr(section, name, value)
     config.recording.player_names.update(_parse_player_names(player_names))
     config.recording.extra_commands = [*config.recording.extra_commands, *extra_commands]
+    kill_filter = _setup_kill_filter(config, weapons, headshot_only, per_kill, min_kills, lead_in, lead_out)
 
     team_ids: set[str] = set()
     if teams:
@@ -1316,6 +1400,7 @@ def batch(
         speed=speed,
         clip_length=clip_length,
         output_fps=output_fps,
+        kill_filter=kill_filter,
     )
     if json_only:
         console.print(f"[green]Planned:[/green] reports written to {output_dir}")

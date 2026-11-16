@@ -166,3 +166,14 @@ def test_round_rules_parse_and_filter():
     for bad in ("x", "0", ":3", "a:b"):
         with pytest.raises(ValueError):
             parse_rounds([bad])
+
+
+def test_batch_per_kill_writes_one_clip_per_kill(batch_env):
+    result = _run(batch_env, "--top", "10", "--players", "Ann", "--per-kill", "--headshot-only")
+    assert result.exit_code == 0, result.output
+    reports = [json.loads(p.read_text()) for p in sorted(batch_env[2].glob("*.json"))]
+    assert len(reports) == 2
+    for report in reports:
+        assert report["batch"]["kill_filter"] == {"weapons": [], "headshot_only": True, "per_kill": True}
+        sequence = report["sequences"][0]
+        assert (sequence["end_tick"] - sequence["start_tick"]) / 64 == 3.5

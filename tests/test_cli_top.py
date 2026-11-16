@@ -209,3 +209,19 @@ def test_minutes_seconds():
     assert minutes_seconds(245.4) == "4m 05s"
     assert minutes_seconds(59.6) == "1m 00s"
     assert minutes_seconds(0) == "0m 00s"
+
+
+def test_top_weapon_filter_per_kill(runner_and_demos):
+    runner, files, (alice, bob, carl) = runner_and_demos
+    result = _top(runner, files, "--headshot-only", "--per-kill")
+    assert result.exit_code == 0, result.output
+    rows = _table_rows(result.output)
+    assert [r[4] for r in rows] == [f"player{alice}", f"player{alice}"]
+    assert all(r[7] == "4s" for r in rows)  # 2 s lead-in + 1.5 s lead-out, rounded
+
+
+def test_top_weapon_filter_without_match_lists_weapons(runner_and_demos):
+    runner, files, _ = runner_and_demos
+    result = _top(runner, files, "--weapon", "deagle")
+    assert result.exit_code != 0
+    assert "weapons in these demos: ak47" in result.output

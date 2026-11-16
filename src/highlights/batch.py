@@ -260,6 +260,7 @@ def run_batch(
     speed: float = 1.0,
     clip_length: float = 5.0,
     output_fps: int | None = None,
+    kill_filter=None,
 ) -> list[Path]:
     """Select the best moments across all demos, then record each demo and write one clip + JSON per moment."""
     import click
@@ -273,6 +274,10 @@ def run_batch(
     for job in jobs:
         label_of[id(job.demo)] = job.label
         moments = cli._scored_moments(job.demo, config)
+        if kill_filter is not None:
+            from highlights.analysis.killfilter import apply_kill_filter
+
+            moments = apply_kill_filter(moments, job.demo, kill_filter)
         steamids = None
         if filtered:
             steamids, missing = present_players(job.demo, queries, team_ids)
@@ -287,7 +292,8 @@ def run_batch(
             if round_allowed(round_rules or [], job.label, m.round_index)
         )
     if not rows:
-        raise click.ClickException("No highlights matched the criteria — try --min-kills 1 or check the demos")
+        hint = cli._no_kill_match(kill_filter, [job.demo for job in jobs]) if kill_filter is not None else ""
+        raise click.ClickException(f"No highlights matched the criteria — try --min-kills 1 or check the demos{hint}")
 
     picked, total = pick_rows(rows, config.selection, config.recording)
     if not picked:
@@ -351,6 +357,12 @@ def run_batch(
             write_report(report, job.demo, clip.group, spatial_by_sequence=clip.spatial)
             data = json.loads(report.read_text(encoding="utf-8"))
             data["batch"] = rank_block(rank_of[id(clip.pov.moments[0])], picked_moments)
+            if kill_filter is not None and kill_filter.active:
+                data["batch"]["kill_filter"] = {
+                    "weapons": sorted(kill_filter.weapons),
+                    "headshot_only": kill_filter.headshot_only,
+                    "per_kill": kill_filter.per_kill,
+                }
             data["slowmo_suggestion"] = slowmo_hint(slow_of.get(id(clip.pov.moments[0])), clip.pov, job.demo.tickrate)
             if match is not None:
                 data["match"] = match
