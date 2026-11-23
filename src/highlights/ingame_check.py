@@ -2,7 +2,7 @@
 
 Covers the assumptions the code cannot verify on its own: kill-feed filter and colours, name
 replacement, extra commands, cam-path coordinates and `edit start`, held last pose, the generated
-face intro, and frame alignment of spliced takes. Each clip is kept raw so a problem is visible.
+face intro, the x-ray take (`spec_show_xray 1`) and frame alignment of spliced takes. Each clip is kept raw so a problem is visible.
 """
 
 from __future__ import annotations
@@ -24,6 +24,7 @@ class CheckPlan:
     pov: Sequence
     campath: Sequence | None = None
     generated: Sequence | None = None
+    xray: Sequence | None = None
     notes: list[str] = field(default_factory=list)
 
 
@@ -49,12 +50,16 @@ def plan_check(demo: DemoData, config: Config, moment: Moment, campaths: list, w
     sequences, spatial = add_dynamic_sequences(
         sequences, spatial, demo, sample_pov_tracks, work_dir / "dyncams", ["face"], None
     )
+    from highlights.recording.xray_cam import add_xray_sequences
+
+    sequences, spatial = add_xray_sequences(sequences, spatial, demo, lambda *_: {}, "all")  # every kill: tests the look
     pov = sequences[0]
-    campath = next((s for s in sequences if s.cinematic_of and s.dynamic_cam is None), None)
+    campath = next((s for s in sequences if s.cinematic_of and s.dynamic_cam is None and not s.xray), None)
+    xray = next((s for s in sequences if s.xray), None)
     generated = next((s for s in sequences if s.dynamic_cam is not None), None)
     if generated is None:
         notes.append("No generated face intro could be planned for this play (no position track).")
-    return CheckPlan(moment, sequences, pov, campath, generated, notes)
+    return CheckPlan(moment, sequences, pov, campath, generated, xray, notes)
 
 
 def checklist(demo: DemoData, config: Config, plan: CheckPlan, measured: float | None) -> str:
@@ -114,7 +119,18 @@ def checklist(demo: DemoData, config: Config, plan: CheckPlan, measured: float |
             f"- [ ] {name}'s player model is drawn while the camera is outside it.",
             "",
         ]
-    if plan.campath is not None or plan.generated is not None:
+    if plan.xray is not None:
+        spans = ", ".join(f"{w['start_seconds']:.1f}–{w['end_seconds']:.1f}" for w in plan.xray.xray["windows"])
+        lines += [
+            "## 05-xray.mp4 (whole play with spec_show_xray 1)",
+            "- [ ] Other players show through walls (outlines or glow). If this looks the same as 01-pov, the cvar does nothing in a",
+            "      recording and `--xray` cannot work as it is: tell me what you see.",
+            f"- [ ] It is still {name}'s first person, with the same HUD, and the kills land at the same times as in 01-pov.",
+            f"- [ ] In 04-spliced.mp4 the x-ray dissolves in over about {plan.xray.xray['fade_seconds']:g} s before each kill and out after it"
+            f" (full strength {spans} s), with no pop or jump.",
+            "",
+        ]
+    if plan.campath is not None or plan.generated is not None or plan.xray is not None:
         lines += [
             "## 04-spliced.mp4 (what `batch` delivers)",
             "- [ ] At every cut the action continues without a jump or repeat (the takes are frame-aligned).",
@@ -140,7 +156,7 @@ def run_check(job, config: Config, moment: Moment, campaths: list, output_dir: P
     recorded = [(o, process_clip(tools.ffmpeg_exe, o, job.work_dir / "clips", False)) for o in outputs]
     by_seq = {id(o.sequence): clip for o, clip in recorded}
     measured = None
-    for label, sequence in (("01-pov", plan.pov), ("02-campath", plan.campath), ("03-face-intro", plan.generated)):
+    for label, sequence in (("01-pov", plan.pov), ("02-campath", plan.campath), ("03-face-intro", plan.generated), ("05-xray", plan.xray)):
         if sequence is None or id(sequence) not in by_seq:
             if sequence is not None:
                 warn(f"{label}: not recorded")

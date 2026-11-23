@@ -120,6 +120,16 @@ the `run` subcommand. Entry point `highlights.cli:main`.
   `plan_clip` (thrower = active camera, inside the clip incl. `HOLD`, non-overlapping) → `follow_keyframes`
   (behind/above along the smoothed flight, hold on `burst`) → one take per clip via
   `dyn_sequences.insert_takes` (after the other takes, so it is spliced on top). No wall check; unvalidated.
+- `analysis/xray.py` + `recording/xray_cam.py` + `video/splice.fade_filter` — `--xray auto|all` and `--xray-fade` (run and batch): `classify_kills`
+  gives each selected kill its reasons (`wallbang` = `penetrated` minus `blockers_on_line` other players, one `_query_positions` call at
+  kill tick - 1 for the penetrating kills, raw count without data; `through smoke`); `plan_windows` = full strength `LEAD` 1 s before to
+  `TAIL` 0.5 s after each kill with `FADE` 0.4 s ramps outside it (shrunk at the clip edges, merged when ramps would overlap).
+  `add_xray_sequences` adds one take per play that has a window (auto) or every kill (all): a POV copy with `Sequence.xray`,
+  `cinematic_of`, `splice_segments` = the full-strength spans, no campath; `build_actions_file` sends `spec_show_xray 1` for it (every other
+  take keeps the old explicit 0). `cli._splice_cinematics` applies it FIRST (straight onto the POV clip, so cam-path/generated cuts win where they
+  overlap) with `splice_clip(fades=...)`: trimmed take -> `format=yuva420p` -> `fade ... alpha=1` -> `overlay` at its own timestamps (checked on
+  solid-colour clips). `batch._sequence_key` includes `xray`. Report key `xray` (+ `of_sequence`). `check-ingame` records `05-xray.mp4`.
+  UNVALIDATED in-game: that the cvar draws outlines in a recording / first person; geometry constants are untuned.
 - `routes.py` — `clip_route(sequence, spatial)`: the places the POV player moves through
   (from the place hints already sampled in spatial metadata) and where each selected kill
   landed; stored as `spatial.route` and shown as the "Where" column of the highlights table.

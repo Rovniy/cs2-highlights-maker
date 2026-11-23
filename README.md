@@ -348,6 +348,33 @@ indoors), so review each run. The offsets are estimates, tuned in
 player's model is drawn while a cam path is active, the cam path fov value, and the
 hand-off to the POV.
 
+## X-ray on wallbangs and smoke kills (`--xray auto|all`)
+
+`run` and `batch` can dissolve an x-ray view (players visible through walls) over the play around kills
+that went through a wall or through smoke, then dissolve back, so it never just pops on and off.
+
+```powershell
+highlights batch final.dem --top 10 --xray auto -o clips
+highlights run match.dem --xray auto --xray-fade 0.6
+```
+
+- **Which kills:** `auto` = a bullet that went through a wall (`penetrated`, minus any other players
+  standing on the shot line, so a shot through a player only does not count) or through smoke. Plays with
+  none get no x-ray take at all, so only the clips that need it pay for a second recording. `all` = every
+  selected kill of every play (handy for trying the look).
+- **How:** the whole play is recorded a second time with `spec_show_xray 1` (the normal take keeps it at 0),
+  frame-aligned with the normal take. The splice step cuts it in around each qualifying kill: full strength
+  from 1 s before to 0.5 s after the kill, with a dissolve of `--xray-fade` seconds (default 0.4) outside
+  that. Kills close enough for their dissolves to overlap share one window. The clip keeps its length,
+  audio and kill times. A cam-path or generated-cam cut wins where it overlaps an x-ray window.
+- **JSON:** each report sequence has an `xray` key (windows, fade lengths, kill ticks, reasons); the x-ray
+  take is its own sequence with `xray.of_sequence` pointing at the play, like cinematic takes.
+- **Not validated in-game:** that `spec_show_xray 1` draws anything in a recording, and that it applies in
+  first person. `highlights check-ingame DEMO` now records an x-ray take (`05-xray.mp4`) and the checklist
+  says what to look for; run it before trusting `--xray`. The player-on-the-line test and the 1 s / 0.5 s
+  windows are estimates, not tuned on real demos. Not combinable with `--suggest-cinematic` or
+  `--cinematic-only`.
+
 ## Static cams (`--static-cam auto|all|NAME[,NAME]`)
 
 A fixed camera over the play (a site where a retake develops, the exact spot where the enemy dies),
