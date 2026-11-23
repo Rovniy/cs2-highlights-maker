@@ -163,6 +163,10 @@ class Sequence:
     # "shows" ("pov"/"enemies"), "cam", "slug", "player_share", "enemy_share", "enemies_avg", "enemies_seen"}];
     # spliced into the POV clip like a generated cam.
     static_downtime: list[dict] | None = None
+    # --xray take: the whole play recorded with spec_show_xray 1, cut over the POV clip around the kills that
+    # earn it with a dissolve, {"windows": [{"start_seconds", "end_seconds", "fade_in", "fade_out", "kill_ticks",
+    # "reasons"}], "fade_seconds", "mode"}; splice_segments holds the full-strength spans.
+    xray: dict | None = None
 
     @property
     def name(self) -> str:
