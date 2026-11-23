@@ -170,6 +170,7 @@ def write_report(
             "clip_filename": f"clip_{s.number:02d}.mp4",
             "slowmo": s.slowmo,
             "tilt": s.tilt,
+            "xray": ({**s.xray, "of_sequence": s.cinematic_of} if s.xray else None),
             "cinematic": (
                 {
                     "campath": s.campath.name,

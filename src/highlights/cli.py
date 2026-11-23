@@ -17,6 +17,7 @@ from highlights.analysis.clutch import attach_clutches, detect_clutches
 from highlights.analysis.moments import cluster_moments
 from highlights.analysis.scoring import score_moments
 from highlights.analysis.selection import clip_seconds, eligible_moments, pick_rows, select_sequences
+from highlights.analysis.xray import FADE as XRAY_FADE
 from highlights.config import Config, load_config
 from highlights.demo.parser import DemoData, DemoParseError, ensure_dem_file, parse_demo
 from highlights.demo.players import PlayerNotFound, resolve_players
@@ -338,6 +339,20 @@ def _no_kill_match(kill_filter, demos: list[DemoData]) -> str:
     "auto: only grenades that matter (HE/fire kill or hits on 2+, flash assist); all: every HE, flash and molotov",
 )
 @click.option(
+    "--xray",
+    type=click.Choice(["off", "auto", "all"]),
+    default="off",
+    help="Dissolve an x-ray view (spec_show_xray 1) over plays with a wallbang or through-smoke kill. "
+    "auto: only those plays; all: around every selected kill. Records the play a second time",
+)
+@click.option(
+    "--xray-fade",
+    type=click.FloatRange(min=0.05),
+    default=XRAY_FADE,
+    show_default=True,
+    help="Seconds the x-ray takes to dissolve in and out",
+)
+@click.option(
     "--static-cam",
     default=None,
     metavar="auto|all|NAME[,NAME]",
@@ -404,6 +419,8 @@ def run(
     intro_transition: str,
     downtime_cam: list[str] | None,
     grenade_cam: str,
+    xray: str,
+    xray_fade: float,
     static_cam: str | list[str] | None,
     static_downtime: str | None,
     vertical: str | None,
@@ -432,10 +449,10 @@ def run(
         raise click.UsageError("--vertical-killfeed needs --vertical blur")
     if suggest_cinematic and cinematic:
         raise click.UsageError("--suggest-cinematic is for previewing; use it without --cinematic")
-    if suggest_cinematic and (intro_cam or downtime_cam or grenade_cam != "off" or static_cam or static_downtime):
+    if suggest_cinematic and (intro_cam or downtime_cam or grenade_cam != "off" or xray != "off" or static_cam or static_downtime):
         raise click.UsageError(
             "--suggest-cinematic cannot be combined with "
-            "--intro-cam/--downtime-cam/--grenade-cam/--static-cam/--static-downtime"
+            "--intro-cam/--downtime-cam/--grenade-cam/--xray/--static-cam/--static-downtime"
         )
     if static_downtime and downtime_cam:
         raise click.UsageError("--static-downtime and --downtime-cam both fill the down time; pick one")
@@ -550,6 +567,9 @@ def run(
             sequences, spatial = add_grenade_sequences(
                 sequences, spatial, parsed, grenade_flights, work_dir / "dyncams", grenade_cam
             )
+
+    if xray != "off":
+        sequences, spatial = _add_xray(sequences, spatial, parsed, xray, xray_fade)
 
     if tilt_mode != "off":
         from highlights.analysis.tilt import plan_sequences as plan_tilt
@@ -670,6 +690,20 @@ def _floors(demo: DemoData):
         return floors_for(demo, load_places(demo.map_name))
 
 
+def _add_xray(
+    sequences: list[Sequence], spatial: dict[int, dict], demo: DemoData, mode: str, fade: float
+) -> tuple[list[Sequence], dict[int, dict]]:
+    """--xray: add x-ray takes for the plays that earn one (one position query covers every wallbang)."""
+    from highlights.broll import sample_players
+    from highlights.recording.xray_cam import add_xray_sequences
+
+    with console.status("Looking for wallbangs and smoke kills..."):
+        planned, spatial = add_xray_sequences(sequences, spatial, demo, sample_players, mode, fade)
+    count = sum(1 for s in planned if s.xray)
+    info(f"X-ray: {count} of {sum(1 for s in planned if s.cinematic_of is None)} plays")
+    return planned, spatial
+
+
 def _add_static_cams(
     sequences: list[Sequence], spatial: dict[int, dict], demo: DemoData, config: Config, mode, work_dir: Path, floors=None
 ) -> tuple[list[Sequence], dict[int, dict]]:
@@ -748,14 +782,20 @@ def _splice_cinematics(
         sequence = output.sequence
         if sequence.cinematic_of is not None and sequence.splice_segments:
             continue
-        # cam path first, static down-time cams over it, generated cams on top
+        # x-ray straight onto the POV clip, then the cam path, static down-time cams over it, generated cams on top
         ordered = sorted(
             takes.get(sequence.number, []),
-            key=lambda take: 2 if take[0].sequence.dynamic_cam is not None else 1 if take[0].sequence.static_downtime else 0,
-        )
+            key=lambda take: (
+                -1 if take[0].sequence.xray
+                else 2 if take[0].sequence.dynamic_cam is not None
+                else 1 if take[0].sequence.static_downtime
+                else 0
+            ),
+        )  # fmt: skip
         for step, (take, take_clip) in enumerate(ordered):
             kind = (
-                "generated cam" if take.sequence.dynamic_cam is not None
+                "x-ray" if take.sequence.xray
+                else "generated cam" if take.sequence.dynamic_cam is not None
                 else "static cam" if take.sequence.static_downtime
                 else "cam path"
             )  # fmt: skip
@@ -772,6 +812,11 @@ def _splice_cinematics(
                 clips_dir / f"spliced_{sequence.number:02d}_{step}.mp4",
                 crf,
                 tilt=size if take.sequence.tilt else None,
+                **(
+                    {"fades": [(w["start_seconds"], w["end_seconds"], w["fade_in"], w["fade_out"]) for w in take.sequence.xray["windows"]]}
+                    if take.sequence.xray
+                    else {}
+                ),
             )
         result.append((output, clip))
     return result
@@ -1185,6 +1230,20 @@ def scan(
     "auto: only grenades that matter (HE/fire kill or hits on 2+, flash assist); all: every HE, flash and molotov",
 )
 @click.option(
+    "--xray",
+    type=click.Choice(["off", "auto", "all"]),
+    default="off",
+    help="Dissolve an x-ray view (spec_show_xray 1) over plays with a wallbang or through-smoke kill. "
+    "auto: only those plays; all: around every selected kill. Records the play a second time",
+)
+@click.option(
+    "--xray-fade",
+    type=click.FloatRange(min=0.05),
+    default=XRAY_FADE,
+    show_default=True,
+    help="Seconds the x-ray takes to dissolve in and out",
+)
+@click.option(
     "--static-cam",
     default=None,
     metavar="auto|all|NAME[,NAME]",
@@ -1265,6 +1324,8 @@ def batch(
     intro_transition: str,
     downtime_cam: list[str] | None,
     grenade_cam: str,
+    xray: str,
+    xray_fade: float,
     static_cam: str | list[str] | None,
     static_downtime: str | None,
     cinematic_only: bool,
@@ -1311,6 +1372,7 @@ def batch(
         clashing = [
             name for name, value in (
                 ("--intro-cam", intro_cam), ("--downtime-cam", downtime_cam), ("--grenade-cam", grenade_cam != "off"),
+                ("--xray", xray != "off"),
                 ("--buildup", buildup), ("--tilt-mode", tilt_mode != "off"), ("--static-cam", static_cam),
                 ("--static-downtime", static_downtime),
             ) if value
@@ -1410,6 +1472,8 @@ def batch(
         review=not no_review,
         calibrate=not no_kill_sync,
         grenade_cam=grenade_cam,
+        xray=xray,
+        xray_fade=xray_fade,
         static_cam=static_cam,
         static_downtime=static_downtime,
         cinematic_only=cinematic_only,

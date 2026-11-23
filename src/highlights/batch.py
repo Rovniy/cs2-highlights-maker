@@ -13,6 +13,7 @@ import shutil
 from dataclasses import dataclass, replace
 from pathlib import Path
 
+from highlights.analysis.xray import FADE as XRAY_FADE
 from highlights.analysis.selection import (
     apply_picks,
     build_sequences,
@@ -131,6 +132,8 @@ def plan_demo(
     protect_kills: bool = True,
     static_cam: str | list[str] | None = None,
     static_downtime: str | None = None,
+    xray: str = "off",
+    xray_fade: float = XRAY_FADE,
 ) -> tuple[list[Sequence], list[ClipPlan]]:
     """Every sequence to record for this demo (POV plus cinematic/generated takes) and the clips they make."""
     from highlights import cli
@@ -190,6 +193,9 @@ def plan_demo(
         sequences, spatial = add_grenade_sequences(
             sequences, spatial, demo, grenade_flights, job.work_dir / "dyncams", grenade_cam
         )
+
+    if xray != "off":
+        sequences, spatial = cli._add_xray(sequences, spatial, demo, xray, xray_fade)
 
     if tilt_mode != "off":
         from highlights.analysis.tilt import plan_sequences as plan_tilt
@@ -260,6 +266,8 @@ def run_batch(
     speed: float = 1.0,
     clip_length: float = 5.0,
     output_fps: int | None = None,
+    xray: str = "off",
+    xray_fade: float = XRAY_FADE,
     kill_filter=None,
 ) -> list[Path]:
     """Select the best moments across all demos, then record each demo and write one clip + JSON per moment."""
@@ -336,7 +344,7 @@ def run_batch(
         sequences, clips = plan_demo(
             job, mine, config, cinematic, cinematic_path, hold, align, intro_cam, downtime_cam, tilt_mode, grenade_cam,
             intro_transition, protect_kills=not cinematic_only, static_cam=static_cam,
-            static_downtime=static_downtime,
+            static_downtime=static_downtime, xray=xray, xray_fade=xray_fade,
         )
         if cinematic_only:
             from highlights.teaser import plan_takes, record_teaser, write_plans
@@ -436,6 +444,7 @@ def _sequence_key(sequence: Sequence, config: Config) -> str:
             [(c.tick, c.steamid) for c in sequence.cameras],
             campath,
             sequence.campath_retime,
+            sequence.xray is not None,
             config.recording.fps,
             config.recording.width,
             config.recording.height,

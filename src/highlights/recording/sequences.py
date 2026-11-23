@@ -223,7 +223,7 @@ def build_actions_file(
         actions.add_exec(setup_tick, "mirv_deathmsg clear")
         for command in (*name_overrides, *killfeed_colors, *extra_commands):
             actions.add_exec(setup_tick, command)
-        actions.add_exec(setup_tick, "spec_show_xray 0")
+        actions.add_exec(setup_tick, f"spec_show_xray {1 if sequence.xray else 0}")
         actions.add_exec(setup_tick, "mp_display_kill_assists 1")
         if uses_campaths:
             # A previous cinematic sequence must not leak its path into this one.
