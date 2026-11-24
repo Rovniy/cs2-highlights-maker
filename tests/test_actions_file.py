@@ -120,3 +120,33 @@ def test_record_window_matches_sequence_ticks(tmp_path):
     assert by_cmd["mirv_streams record end"] == 6000
     assert by_cmd["pause_playback"] == 5000 - 4
     assert by_cmd["quit"] == 6000 + 64
+
+
+def test_name_overrides_emitted_once_per_sequence(tmp_path):
+    rounds = [make_round(0, 0, 100000)]
+    demo = make_demo([make_kill(5000, attacker="111")], rounds, slots={"111": 3})
+    recording = RecordingConfig(player_names={"111": 'Cool "Guy"', "abc": "bad id", "222": " "})
+
+    sequences = [_sequence(1, 5000, 6000), _sequence(2, 20000, 21000)]
+    actions = build_actions_file(tmp_path / "match.dem", sequences, demo, recording, tmp_path)
+    data = json.loads(actions.write().read_text())
+
+    for group in data:
+        cmds = [a["cmd"] for a in group["actions"] if a["cmd"].startswith("mirv_replace_name")]
+        assert cmds == ['mirv_replace_name byXuid add x111 "Cool Guy"']
+
+
+def test_no_name_overrides_by_default(tmp_path):
+    rounds = [make_round(0, 0, 100000)]
+    demo = make_demo([make_kill(5000, attacker="111")], rounds, slots={"111": 3})
+    actions = build_actions_file(tmp_path / "match.dem", [_sequence(1, 5000, 6000)], demo, RecordingConfig(), tmp_path)
+    data = json.loads(actions.write().read_text())
+    assert not any("mirv_replace_name" in a["cmd"] for a in data[0]["actions"])
+
+
+def test_player_names_loaded_from_toml(tmp_path):
+    from highlights.config import load_config
+
+    path = tmp_path / "config.toml"
+    path.write_text('[recording.player_names]\n76561198000000000 = "Ace"\n')
+    assert load_config(path).recording.player_names == {"76561198000000000": "Ace"}

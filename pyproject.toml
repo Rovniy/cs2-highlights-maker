@@ -9,7 +9,7 @@ description = "Generate highlight videos from CS2 demos: parse, detect best mome
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "demoparser2>=0.41",
+    "demoparser2>=0.42.2",  # 0.42.0 cannot read kills in demos from CS2 patch 14197 on
     "pandas>=2.0",
     "click>=8.1",
     "rich>=13",

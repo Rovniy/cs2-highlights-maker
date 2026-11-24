@@ -67,3 +67,31 @@ def test_score_moments_fills_scores():
     moments = cluster_moments(kills, demo.tickrate)
     score_moments(moments, demo)
     assert all(m.score > 0 for m in moments)
+
+
+def test_zeus_kill_bonus():
+    rounds = [make_round(0, 0, 100000, winner="CT"), make_round(1, 100000, 200000)]
+    plain = [make_kill(1000)]
+    zeus = [make_kill(1000, weapon="taser")]
+    demo = make_demo(plain, rounds)
+    assert score_moment(_moment(zeus, demo), demo) > score_moment(_moment(plain, demo), demo)
+
+
+def test_wallbang_bonus():
+    rounds = [make_round(0, 0, 100000, winner="CT"), make_round(1, 100000, 200000)]
+    plain = [make_kill(1000)]
+    wallbang = [make_kill(1000, penetrated=1)]
+    demo = make_demo(plain, rounds)
+    assert score_moment(_moment(wallbang, demo), demo) > score_moment(_moment(plain, demo), demo)
+
+
+def test_pistol_round_multiplier():
+    rounds = [
+        make_round(0, 0, 100000, winner="CT"),
+        make_round(1, 100000, 200000, winner="CT"),
+        make_round(2, 200000, 300000, winner="CT"),
+    ]
+    pistol = [make_kill(1000, round_index=0)]
+    mid = [make_kill(101000, round_index=1)]
+    demo = make_demo(pistol, rounds)
+    assert score_moment(_moment(pistol, demo), demo) > score_moment(_moment(mid, demo), demo)

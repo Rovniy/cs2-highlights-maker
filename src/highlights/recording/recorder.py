@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -120,6 +121,11 @@ def record(
         raise RecordingSetupError("Steam is not running — start Steam and try again")
 
     work_dir.mkdir(parents=True, exist_ok=True)
+    # The work dir is shared per demo, and the ffmpeg preset has no -y: a leftover
+    # video.mp4 from an earlier run (e.g. --keep-clips for another player) would
+    # block the new recording and verify_outputs would return the stale file.
+    for sequence in sequences:
+        shutil.rmtree(work_dir / sequence.name, ignore_errors=True)
     actions = build_actions_file(demo.path, sequences, demo, config.recording, work_dir)
     actions.write()
     toolchain.write_ffmpeg_ini(tools.hlae_exe, tools.ffmpeg_exe)

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 from highlights.demo.parser import DemoData
 
 
@@ -29,3 +31,16 @@ def resolve_player(demo: DemoData, query: str) -> str:
         raise PlayerNotFound(f"'{query}' matches several players: {names}")
     available = ", ".join(sorted(demo.player_names.values()))
     raise PlayerNotFound(f"Player '{query}' not found. Players in demo: {available}")
+
+
+def resolve_players(demo: DemoData, queries: Iterable[str]) -> list[str]:
+    """Resolve comma-separated steamid/name queries to de-duplicated steamid64s."""
+    pieces = [q for item in queries for q in (p.strip() for p in item.split(",")) if q]
+    if not pieces:
+        raise PlayerNotFound("No players given")
+    resolved: list[str] = []
+    for piece in pieces:
+        sid = resolve_player(demo, piece)
+        if sid not in resolved:
+            resolved.append(sid)
+    return resolved

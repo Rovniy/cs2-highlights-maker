@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 
 
 @dataclass(frozen=True)
@@ -77,6 +78,7 @@ class Moment:
     kills: list[Kill] = field(default_factory=list)
     clutch: Clutch | None = None
     score: float = 0.0
+    tags: list[str] = field(default_factory=list)  # round context that changed the score (match point, eco)
 
     @property
     def kill_count(self) -> int:
@@ -137,6 +139,34 @@ class Sequence:
     score: float
     round_index: int
     moments: list[Moment] = field(default_factory=list)
+    # Cinematic re-recording of another sequence's ticks through a user cam path.
+    campath: Path | None = None
+    cinematic_of: int | None = None
+    # Clip-second ranges where the cinematic replaces the POV footage (splice mode).
+    splice_segments: list[tuple[float, float]] | None = None
+    # --campath-hold/--campath-align: the cam path is started offset_seconds late and holds its
+    # last pose until hold_until_seconds, as {"offset_seconds", "hold_until_seconds"}.
+    campath_retime: dict | None = None
+    # --slow-mode auto: the slow-motion beat, {"kill_tick", "start_seconds", "end_seconds", "speed",
+    # "worth", "reason", "victim"} (clip seconds); applied to the finished POV clip.
+    slowmo: dict | None = None
+    # --tilt-mode: the cam-path footage of this take gets a tilt-shift look, {"distance", "height", "reason"}.
+    tilt: dict | None = None
+    # Top cam path candidates considered for this play (name, distance, coverage).
+    cinematic_candidates: list[dict] | None = None
+    # Generated-cam segments (start, end, kind, style) of a --intro-cam/--downtime-cam take.
+    dynamic_cam: list[dict] | None = None
+    # --static-cam take: {"name", "label", "slug", "deaths_seen", "player_seconds", "distance"}; recorded as
+    # its own file, never spliced or concatenated.
+    static_cam: dict | None = None
+    # --static-downtime take: the down-time passes this static cam won, [{"start_seconds", "end_seconds",
+    # "shows" ("pov"/"enemies"), "cam", "slug", "player_share", "enemy_share", "enemies_avg", "enemies_seen"}];
+    # spliced into the POV clip like a generated cam.
+    static_downtime: list[dict] | None = None
+    # --xray take: the whole play recorded with spec_show_xray 1, cut over the POV clip around the kills that
+    # earn it with a dissolve, {"windows": [{"start_seconds", "end_seconds", "fade_in", "fade_out", "kill_ticks",
+    # "reasons"}], "fade_seconds", "mode"}; splice_segments holds the full-strength spans.
+    xray: dict | None = None
 
     @property
     def name(self) -> str:
